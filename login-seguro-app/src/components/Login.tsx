@@ -9,64 +9,80 @@ import {
   VStack,
   Heading,
   useToast,
-  Text,
   Alert,
   AlertIcon,
   AlertTitle,
   AlertDescription,
 } from '@chakra-ui/react';
-
-// Credenciales de prueba (en un caso real, esto estaría en el backend)
-const TEST_CREDENTIALS = {
-  email: 'test@test.com',
-  password: 'Test123!' 
-};
-
-const LOCK_TIME = 15 * 60; // 15 minutos en segundos
+import { supabase } from '../lib/supabaseClient';
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [attempts, setAttempts] = useState(0);
-  const [lockoutTime, setLockoutTime] = useState(0);
   const [timeRemaining, setTimeRemaining] = useState(0);
   const toast = useToast();
 
+  // Verificar estado de bloqueo al cargar
   useEffect(() => {
-    let timer: NodeJS.Timeout;
-    if (timeRemaining > 0) {
-      timer = setInterval(() => {
-        setTimeRemaining(prev => {
-          if (prev <= 1) {
-            setAttempts(0);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    }
-    return () => clearInterval(timer);
-  }, [timeRemaining]);
+    checkLockoutStatus();
+  }, []);
 
-  const formatTime = (seconds: number) => {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+  const checkLockoutStatus = async () => {
+    try {
+      const { data: user, error } = await supabase
+        .from('users')
+        .select('lockout_until, failed_attempts')
+        .eq('email', email)
+        .single();
+
+      if (user?.lockout_until) {
+        const lockoutTime = new Date(user.lockout_until);
+        const now = new Date();
+        if (lockoutTime > now) {
+          setTimeRemaining(Math.floor((lockoutTime.getTime() - now.getTime()) / 1000));
+          setAttempts(3); // Max attempts
+        }
+      }
+    } catch (error) {
+      console.error('Error checking lockout status:', error);
+    }
   };
 
-  const validateInput = (input: string) => {
-    const dangerousPatterns = [
-      /SELECT.*FROM/i,
-      /INSERT.*INTO/i,
-      /UPDATE.*SET/i,
-      /DELETE.*FROM/i,
-      /<script>/i,
-      /'/,
-      /;/,
-      /--/
-    ];
-    return !dangerousPatterns.some(pattern => pattern.test(input));
+  const handleFailedAttempt = async () => {
+    try {
+      const { data: user } = await supabase
+        .from('users')
+        .select('failed_attempts')
+        .eq('email', email)
+        .single();
+
+      const newAttempts = (user?.failed_attempts || 0) + 1;
+
+      if (newAttempts >= 3) {
+        // Bloquear por 15 minutos
+        const lockoutUntil = new Date(Date.now() + 15 * 60 * 1000);
+        await supabase
+          .from('users')
+          .update({
+            failed_attempts: newAttempts,
+            lockout_until: lockoutUntil.toISOString()
+          })
+          .eq('email', email);
+
+        setTimeRemaining(15 * 60);
+      } else {
+        await supabase
+          .from('users')
+          .update({ failed_attempts: newAttempts })
+          .eq('email', email);
+      }
+
+      setAttempts(newAttempts);
+    } catch (error) {
+      console.error('Error updating failed attempts:', error);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -75,60 +91,48 @@ export default function Login() {
     if (timeRemaining > 0) {
       toast({
         title: 'Cuenta bloqueada',
-        description: `Por favor espere ${formatTime(timeRemaining)} antes de intentar nuevamente.`,
+        description: `Por favor espere ${Math.floor(timeRemaining / 60)}:${(timeRemaining % 60).toString().padStart(2, '0')} minutos`,
         status: 'error',
         duration: 5000,
       });
       return;
     }
 
-    if (!validateInput(email) || !validateInput(password)) {
-      toast({
-        title: 'Error de Seguridad',
-        description: 'Entrada inválida detectada - Se ha registrado el intento',
-        status: 'error',
-        duration: 3000,
-      });
-      return;
-    }
-
     setIsLoading(true);
     try {
-      // Simulamos una pequeña demora para la verificación
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Intentar login con Supabase
+      const { data: { user }, error } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      });
 
-      if (email === TEST_CREDENTIALS.email && password === TEST_CREDENTIALS.password) {
+      if (error) throw error;
+
+      if (user) {
+        // Reset failed attempts on successful login
+        await supabase
+          .from('users')
+          .update({
+            failed_attempts: 0,
+            lockout_until: null
+          })
+          .eq('email', email);
+
         toast({
           title: 'Éxito',
           description: 'Inicio de sesión exitoso',
           status: 'success',
           duration: 3000,
         });
-        setAttempts(0);
-      } else {
-        const newAttempts = attempts + 1;
-        setAttempts(newAttempts);
         
-        if (newAttempts >= 3) {
-          setTimeRemaining(LOCK_TIME);
-          setLockoutTime(Date.now());
-          toast({
-            title: 'Cuenta bloqueada',
-            description: 'Demasiados intentos fallidos. La cuenta ha sido bloqueada por 15 minutos.',
-            status: 'error',
-            duration: 5000,
-            isClosable: false,
-          });
-        } else {
-          toast({
-            title: 'Error',
-            description: `Credenciales inválidas. Intentos restantes: ${3 - newAttempts}`,
-            status: 'error',
-            duration: 3000,
-          });
-        }
+        // Reset local state
+        setAttempts(0);
+        setTimeRemaining(0);
       }
     } catch (error: any) {
+      console.error('Error:', error);
+      await handleFailedAttempt();
+      
       toast({
         title: 'Error',
         description: error.message,
@@ -151,7 +155,7 @@ export default function Login() {
             <Box>
               <AlertTitle>Cuenta bloqueada</AlertTitle>
               <AlertDescription>
-                Demasiados intentos fallidos. Por favor espere {formatTime(timeRemaining)} para intentar nuevamente.
+                Por favor espere {Math.floor(timeRemaining / 60)}:{(timeRemaining % 60).toString().padStart(2, '0')} minutos
               </AlertDescription>
             </Box>
           </Alert>
@@ -166,8 +170,6 @@ export default function Login() {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  bg="gray.50"
-                  placeholder="test@test.com"
                   isDisabled={timeRemaining > 0}
                 />
               </FormControl>
@@ -178,14 +180,12 @@ export default function Login() {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  bg="gray.50"
-                  placeholder="Test123!"
                   isDisabled={timeRemaining > 0}
                 />
               </FormControl>
 
               {attempts > 0 && attempts < 3 && (
-                <Alert status="warning" borderRadius="md">
+                <Alert status="warning">
                   <AlertIcon />
                   <AlertDescription>
                     Intentos fallidos: {attempts}/3
@@ -202,14 +202,6 @@ export default function Login() {
               >
                 Ingresar
               </Button>
-
-              <Text fontSize="sm" color="gray.600">
-                Credenciales de prueba:
-                <br />
-                Email: test@test.com
-                <br />
-                Contraseña: Test123!
-              </Text>
             </VStack>
           </form>
         </Box>
