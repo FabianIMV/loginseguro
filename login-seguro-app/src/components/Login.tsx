@@ -131,7 +131,28 @@ export default function Login() {
 
     setIsLoading(true);
     try {
-      // Intentar el login directamente
+      // Primero verificar si hay una sesión activa para este email
+      const { data: prevUser, error: prevUserError } = await supabase
+        .from('user_session_tracking')
+        .select('*')
+        .eq('email', email)
+        .single();
+
+      if (prevUser) {
+        // Si hay una sesión activa, cerrarla globalmente
+        await supabase.auth.signOut({ scope: 'global' });
+        toast({
+          title: 'Sesión previa detectada',
+          description: 'Se ha cerrado la sesión anterior',
+          status: 'warning',
+          duration: 3000,
+        });
+        
+        // Esperar un momento para asegurar que la sesión se cerró
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+
+      // Ahora sí intentar el nuevo login
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -140,7 +161,6 @@ export default function Login() {
       if (error) throw error;
 
       if (data.user) {
-        // Resetear intentos fallidos
         setAttempts(0);
         localStorage.removeItem('loginAttempts');
         localStorage.removeItem('lockUntil');
@@ -150,6 +170,7 @@ export default function Login() {
           .from('user_session_tracking')
           .upsert({
             user_id: data.user.id,
+            email: email,
             last_session_at: new Date().toISOString(),
           }, {
             onConflict: 'user_id'
