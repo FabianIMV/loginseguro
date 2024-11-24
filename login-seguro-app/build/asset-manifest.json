@@ -1,12 +1,12 @@
 {
   "files": {
-    "main.js": "/loginseguro/static/js/main.970bd124.js",
+    "main.js": "/loginseguro/static/js/main.417b4598.js",
     "static/js/198.a1cd27c7.chunk.js": "/loginseguro/static/js/198.a1cd27c7.chunk.js",
     "index.html": "/loginseguro/index.html",
-    "main.970bd124.js.map": "/loginseguro/static/js/main.970bd124.js.map",
+    "main.417b4598.js.map": "/loginseguro/static/js/main.417b4598.js.map",
     "198.a1cd27c7.chunk.js.map": "/loginseguro/static/js/198.a1cd27c7.chunk.js.map"
   },
   "entrypoints": [
-    "static/js/main.970bd124.js"
+    "static/js/main.417b4598.js"
   ]
 }

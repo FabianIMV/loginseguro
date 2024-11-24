@@ -131,35 +131,7 @@ export default function Login() {
 
     setIsLoading(true);
     try {
-      // Primero, forzar el cierre de todas las sesiones existentes para este usuario
-      const { data: { session: existingSession } } = await supabase.auth.getSession();
-      
-      if (existingSession) {
-        // Si hay una sesión existente, primero la cerramos globalmente
-        await supabase.auth.signOut({ scope: 'global' });
-        toast({
-          title: 'Sesión previa detectada',
-          description: 'Se han cerrado todas las sesiones activas por seguridad',
-          status: 'warning',
-          duration: 3000,
-        });
-        // Esperar un momento para asegurar que la sesión se cerró
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-
-      // Verificar si hay sesiones activas para este email específico
-      const { data: { users }, error: userError } = await supabase
-        .from('auth.users')
-        .select('*')
-        .eq('email', email)
-        .single();
-
-      if (users?.length > 0) {
-        // Si encontramos el usuario, forzamos el cierre de sus sesiones
-        await supabase.auth.admin.signOut(users[0].id);
-      }
-
-      // Ahora sí intentamos el nuevo login
+      // Intentar el login directamente
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -168,12 +140,20 @@ export default function Login() {
       if (error) throw error;
 
       if (data.user) {
+        // Resetear intentos fallidos
         setAttempts(0);
         localStorage.removeItem('loginAttempts');
         localStorage.removeItem('lockUntil');
         
-        // Almacenar el token de la sesión actual
-        localStorage.setItem('currentSessionToken', data.session?.access_token || '');
+        // Actualizar el registro de la última sesión
+        await supabase
+          .from('user_session_tracking')
+          .upsert({
+            user_id: data.user.id,
+            last_session_at: new Date().toISOString(),
+          }, {
+            onConflict: 'user_id'
+          });
         
         toast({
           title: 'Inicio de sesión exitoso',
