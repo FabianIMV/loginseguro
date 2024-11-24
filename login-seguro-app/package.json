@@ -2,7 +2,7 @@
   "name": "login-seguro-app",
   "version": "0.1.0",
   "private": true,
-  "homepage": "https://fabianimv.github.io/loginseguro",
+  "homepage": "https://FabianIMV.github.io/loginseguro",
   "dependencies": {
     "@chakra-ui/react": "^2.8.2",
     "@emotion/react": "^11.0.0",
