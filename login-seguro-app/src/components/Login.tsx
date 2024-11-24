@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -14,17 +14,75 @@ import {
   AlertIcon,
   AlertTitle,
   AlertDescription,
+  Text,
+  Code,
+  Progress,
 } from '@chakra-ui/react';
 import { supabase } from '../lib/supabaseClient';
+
+const LOCK_TIME = 15 * 60; // 15 minutos en segundos
+const MAX_ATTEMPTS = 3;
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [attempts, setAttempts] = useState(0);
-  const [timeRemaining, setTimeRemaining] = useState(0);
+  const [attempts, setAttempts] = useState(() => {
+    // Recuperar intentos del localStorage
+    const savedAttempts = localStorage.getItem('loginAttempts');
+    return savedAttempts ? parseInt(savedAttempts) : 0;
+  });
+  const [timeRemaining, setTimeRemaining] = useState(() => {
+    // Recuperar tiempo de bloqueo del localStorage
+    const lockUntil = localStorage.getItem('lockUntil');
+    if (lockUntil) {
+      const remaining = Math.max(0, parseInt(lockUntil) - Date.now());
+      return Math.floor(remaining / 1000);
+    }
+    return 0;
+  });
+  
   const navigate = useNavigate();
   const toast = useToast();
+
+  const TEST_CREDENTIALS = {
+    email: 'test@test.com',
+    password: 'Test123!'
+  };
+
+  // Efecto para el temporizador de bloqueo
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (timeRemaining > 0) {
+      timer = setInterval(() => {
+        setTimeRemaining(prev => {
+          const newTime = prev - 1;
+          if (newTime <= 0) {
+            // Resetear intentos cuando termine el tiempo
+            setAttempts(0);
+            localStorage.removeItem('loginAttempts');
+            localStorage.removeItem('lockUntil');
+            return 0;
+          }
+          return newTime;
+        });
+      }, 1000);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [timeRemaining]);
+
+  // Efecto para verificar el estado de la sesión al cargar
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        navigate('/profile');
+      }
+    };
+    checkSession();
+  }, [navigate]);
 
   const validateInput = (input: string) => {
     const dangerousPatterns = [
@@ -38,6 +96,19 @@ export default function Login() {
       /--/
     ];
     return !dangerousPatterns.some(pattern => pattern.test(input));
+  };
+
+  const handleLockout = () => {
+    const lockUntil = Date.now() + (LOCK_TIME * 1000);
+    localStorage.setItem('lockUntil', lockUntil.toString());
+    setTimeRemaining(LOCK_TIME);
+    toast({
+      title: 'Cuenta bloqueada',
+      description: `Demasiados intentos fallidos. Por favor espere 15 minutos.`,
+      status: 'error',
+      duration: 5000,
+      isClosable: false,
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -73,42 +144,48 @@ export default function Login() {
       if (error) throw error;
 
       if (data.user) {
+        // Resetear intentos en login exitoso
+        setAttempts(0);
+        localStorage.removeItem('loginAttempts');
+        localStorage.removeItem('lockUntil');
+        
         toast({
           title: 'Inicio de sesión exitoso',
           status: 'success',
           duration: 2000,
         });
-        // Redirigir al perfil después de un inicio de sesión exitoso
+        
         navigate('/profile');
       }
     } catch (error: any) {
       const newAttempts = attempts + 1;
       setAttempts(newAttempts);
+      localStorage.setItem('loginAttempts', newAttempts.toString());
       
-      if (newAttempts >= 3) {
-        const lockoutMinutes = 15;
-        setTimeRemaining(lockoutMinutes * 60);
-        const lockoutInterval = setInterval(() => {
-          setTimeRemaining(prev => {
-            if (prev <= 1) {
-              clearInterval(lockoutInterval);
-              setAttempts(0);
-              return 0;
-            }
-            return prev - 1;
-          });
-        }, 1000);
+      if (newAttempts >= MAX_ATTEMPTS) {
+        handleLockout();
+      } else {
+        toast({
+          title: 'Error de autenticación',
+          description: `Credenciales inválidas. Intentos restantes: ${MAX_ATTEMPTS - newAttempts}`,
+          status: 'error',
+          duration: 3000,
+        });
       }
-
-      toast({
-        title: 'Error',
-        description: error.message,
-        status: 'error',
-        duration: 3000,
-      });
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const useTestCredentials = () => {
+    setEmail(TEST_CREDENTIALS.email);
+    setPassword(TEST_CREDENTIALS.password);
+  };
+
+  const formatTimeRemaining = (seconds: number) => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
 
   return (
@@ -119,10 +196,18 @@ export default function Login() {
         {timeRemaining > 0 && (
           <Alert status="error" borderRadius="md">
             <AlertIcon />
-            <Box>
+            <Box flex="1">
               <AlertTitle>Cuenta bloqueada</AlertTitle>
               <AlertDescription>
-                Por favor espere {Math.floor(timeRemaining / 60)}:{(timeRemaining % 60).toString().padStart(2, '0')} minutos
+                <Text mb={2}>
+                  Por favor espere {formatTimeRemaining(timeRemaining)} minutos
+                </Text>
+                <Progress 
+                  value={(timeRemaining / LOCK_TIME) * 100} 
+                  size="sm" 
+                  colorScheme="red" 
+                  borderRadius="md"
+                />
               </AlertDescription>
             </Box>
           </Alert>
@@ -139,6 +224,7 @@ export default function Login() {
                   onChange={(e) => setEmail(e.target.value)}
                   bg="gray.50"
                   isDisabled={timeRemaining > 0}
+                  placeholder={TEST_CREDENTIALS.email}
                 />
               </FormControl>
 
@@ -150,15 +236,25 @@ export default function Login() {
                   onChange={(e) => setPassword(e.target.value)}
                   bg="gray.50"
                   isDisabled={timeRemaining > 0}
+                  placeholder={TEST_CREDENTIALS.password}
                 />
               </FormControl>
 
-              {attempts > 0 && attempts < 3 && (
-                <Alert status="warning">
+              {attempts > 0 && attempts < MAX_ATTEMPTS && (
+                <Alert status="warning" borderRadius="md">
                   <AlertIcon />
-                  <AlertDescription>
-                    Intentos fallidos: {attempts}/3
-                  </AlertDescription>
+                  <Box flex="1">
+                    <AlertTitle>Advertencia</AlertTitle>
+                    <AlertDescription>
+                      Intentos fallidos: {attempts}/{MAX_ATTEMPTS}
+                      <Progress 
+                        value={(attempts / MAX_ATTEMPTS) * 100} 
+                        size="xs" 
+                        colorScheme="orange" 
+                        mt={2} 
+                      />
+                    </AlertDescription>
+                  </Box>
                 </Alert>
               )}
 
@@ -171,6 +267,35 @@ export default function Login() {
               >
                 Ingresar
               </Button>
+
+              {/* Credenciales de prueba */}
+              <Box 
+                p={4} 
+                bg="gray.50" 
+                borderRadius="md" 
+                w="full"
+              >
+                <Text fontSize="sm" color="gray.600" mb={2}>
+                  Credenciales de prueba:
+                </Text>
+                <VStack align="start" spacing={1}>
+                  <Text fontSize="sm">
+                    <strong>Email:</strong> <Code>{TEST_CREDENTIALS.email}</Code>
+                  </Text>
+                  <Text fontSize="sm">
+                    <strong>Contraseña:</strong> <Code>{TEST_CREDENTIALS.password}</Code>
+                  </Text>
+                </VStack>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  mt={2}
+                  onClick={useTestCredentials}
+                  isDisabled={timeRemaining > 0}
+                >
+                  Usar credenciales de prueba
+                </Button>
+              </Box>
             </VStack>
           </form>
         </Box>

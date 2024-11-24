@@ -10,30 +10,39 @@ import {
   Alert,
   AlertIcon,
   useToast,
+  Table,
+  Tbody,
+  Tr,
+  Td,
+  Badge,
 } from '@chakra-ui/react';
 import { supabase } from '../lib/supabaseClient';
 
 export default function Profile() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [sessionInfo, setSessionInfo] = useState<any>(null);
   const navigate = useNavigate();
   const toast = useToast();
 
   useEffect(() => {
     checkUser();
-    // Escuchar cambios en la sesión
-    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_OUT') {
+    // Suscribirse a cambios en la sesión
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth event:', event);
+      if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
         navigate('/');
+      } else if (event === 'TOKEN_REFRESHED') {
+        console.log('Token refreshed');
       } else if (!session) {
         navigate('/');
       } else {
         setUser(session.user);
+        setSessionInfo(session);
       }
     });
 
     return () => {
-      // Limpiar el listener cuando el componente se desmonte
       if (authListener && authListener.subscription) {
         authListener.subscription.unsubscribe();
       }
@@ -42,18 +51,27 @@ export default function Profile() {
 
   const checkUser = async () => {
     try {
-      const { data: { user: currentUser }, error } = await supabase.auth.getUser();
-      if (error) {
-        throw error;
-      }
-      if (!currentUser) {
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (error) throw error;
+      
+      if (!session) {
         navigate('/');
         return;
       }
-      setUser(currentUser);
+
+      setUser(session.user);
+      setSessionInfo(session);
+
+      // Verificar la validez del token
+      const tokenExpiry = new Date((session.expires_at || 0) * 1000);
+      const now = new Date();
+      if (tokenExpiry <= now) {
+        throw new Error('Sesión expirada');
+      }
     } catch (error: any) {
+      console.error('Error:', error);
       toast({
-        title: 'Error',
+        title: 'Error de sesión',
         description: error.message,
         status: 'error',
         duration: 3000,
@@ -68,6 +86,9 @@ export default function Profile() {
     try {
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
+      
+      // Limpiar el storage local
+      localStorage.clear();
       navigate('/');
     } catch (error: any) {
       toast({
@@ -79,10 +100,17 @@ export default function Profile() {
     }
   };
 
+  const formatDate = (date: Date) => {
+    return new Intl.DateTimeFormat('es-ES', {
+      dateStyle: 'medium',
+      timeStyle: 'medium'
+    }).format(date);
+  };
+
   if (loading) {
     return (
       <Container maxW="container.sm" py={10}>
-        <Text>Cargando...</Text>
+        <Text>Verificando sesión...</Text>
       </Container>
     );
   }
@@ -91,27 +119,45 @@ export default function Profile() {
     <Container maxW="container.sm" py={10}>
       <VStack spacing={8}>
         <Heading>Perfil de Usuario</Heading>
+        
+        <Alert status="success" borderRadius="md">
+          <AlertIcon />
+          Sesión activa y segura
+        </Alert>
+
         <Box w="100%" bg="white" p={8} borderRadius="lg" boxShadow="lg">
           <VStack spacing={4} align="stretch">
-            <Alert status="success" borderRadius="md">
-              <AlertIcon />
-              Sesión activa y segura
-            </Alert>
+            <Heading size="md" mb={4}>Información de la Sesión</Heading>
             
-            <Text>
-              <strong>Email:</strong> {user?.email}
-            </Text>
-            <Text>
-              <strong>ID:</strong> {user?.id}
-            </Text>
-            <Text>
-              <strong>Último inicio de sesión:</strong>{' '}
-              {new Date(user?.last_sign_in_at).toLocaleString()}
-            </Text>
+            <Table variant="simple">
+              <Tbody>
+                <Tr>
+                  <Td fontWeight="bold">Email:</Td>
+                  <Td>{user?.email}</Td>
+                </Tr>
+                <Tr>
+                  <Td fontWeight="bold">ID de Usuario:</Td>
+                  <Td><Code>{user?.id}</Code></Td>
+                </Tr>
+                <Tr>
+                  <Td fontWeight="bold">Último acceso:</Td>
+                  <Td>{formatDate(new Date(user?.last_sign_in_at))}</Td>
+                </Tr>
+                <Tr>
+                  <Td fontWeight="bold">Expira en:</Td>
+                  <Td>
+                    <Badge colorScheme="green">
+                      {formatDate(new Date(sessionInfo?.expires_at * 1000))}
+                    </Badge>
+                  </Td>
+                </Tr>
+              </Tbody>
+            </Table>
 
             <Button
               colorScheme="red"
               onClick={handleSignOut}
+              mt={4}
             >
               Cerrar Sesión
             </Button>
