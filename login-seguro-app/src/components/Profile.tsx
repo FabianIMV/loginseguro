@@ -34,45 +34,45 @@ export default function Profile() {
   const navigate = useNavigate();
   const toast = useToast();
 
-  // Verificación periódica de la validez de la sesión
+  // Verificación periódica de sesión
   useEffect(() => {
     const interval = setInterval(async () => {
       try {
         const { data: { session: currentSession } } = await supabase.auth.getSession();
         
+        // Si no hay sesión, puede ser porque se cerró en otro lado
         if (!currentSession) {
-          // Si no hay sesión, redirigir al login
-          handleSessionEnd();
+          setShowSessionEndedModal(true);
           return;
         }
 
-        // Verificar si el token almacenado coincide con el token actual
-        const storedToken = localStorage.getItem('currentSessionToken');
-        if (storedToken && storedToken !== currentSession.access_token) {
-          // Si los tokens no coinciden, significa que se inició sesión en otro dispositivo
+        // Verificar la última sesión registrada para este usuario
+        const { data: sessions, error } = await supabase
+          .from('auth.sessions')
+          .select('*')
+          .eq('user_id', currentSession.user.id)
+          .order('created_at', { ascending: false })
+          .limit(1);
+
+        if (error) throw error;
+
+        // Si la sesión más reciente no es la actual, significa que hay una nueva
+        if (sessions?.[0] && sessions[0].id !== currentSession.id) {
           setShowSessionEndedModal(true);
           await handleSessionEnd();
         }
+
       } catch (error) {
         console.error('Error verificando sesión:', error);
       }
-    }, 3000); // Verificar cada 3 segundos
+    }, 3000);
 
     return () => clearInterval(interval);
   }, []);
 
   const handleSessionEnd = async () => {
     try {
-      // Limpiar el token almacenado
-      localStorage.removeItem('currentSessionToken');
-      
-      // Cerrar la sesión en Supabase
       await supabase.auth.signOut();
-      
-      // Mostrar modal
-      setShowSessionEndedModal(true);
-      
-      // Después de 5 segundos, redirigir al login
       setTimeout(() => {
         navigate('/');
       }, 5000);
@@ -83,18 +83,12 @@ export default function Profile() {
 
   useEffect(() => {
     checkUser();
-    // Suscribirse a cambios en la sesión
     const { data: authListener } = supabase.auth.onAuthStateChange(
       async (event: AuthChangeEvent, session) => {
         console.log('Auth event:', event);
         switch (event) {
           case 'SIGNED_OUT':
             navigate('/');
-            break;
-          case 'TOKEN_REFRESHED':
-            if (session) {
-              localStorage.setItem('currentSessionToken', session.access_token);
-            }
             break;
           default:
             if (!session) {
@@ -151,8 +145,6 @@ export default function Profile() {
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
       
-      // Limpiar el storage local
-      localStorage.clear();
       navigate('/');
     } catch (error: any) {
       toast({
@@ -240,7 +232,7 @@ export default function Profile() {
             <Alert status="warning" mb={4}>
               <AlertIcon />
               <Text>
-                Se ha iniciado sesión en otro dispositivo. Por seguridad, esta sesión ha sido cerrada.
+                Se ha iniciado sesión en otro dispositivo. Esta sesión ha sido cerrada.
               </Text>
             </Alert>
             <Text>Serás redirigido a la página de inicio de sesión en 5 segundos...</Text>
