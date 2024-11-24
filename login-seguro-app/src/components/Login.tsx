@@ -131,19 +131,35 @@ export default function Login() {
 
     setIsLoading(true);
     try {
-      // Verificar y cerrar sesiones existentes
+      // Primero, forzar el cierre de todas las sesiones existentes para este usuario
       const { data: { session: existingSession } } = await supabase.auth.getSession();
       
       if (existingSession) {
+        // Si hay una sesión existente, primero la cerramos globalmente
         await supabase.auth.signOut({ scope: 'global' });
         toast({
           title: 'Sesión previa detectada',
-          description: 'Se ha cerrado la sesión en todos los dispositivos por seguridad',
+          description: 'Se han cerrado todas las sesiones activas por seguridad',
           status: 'warning',
           duration: 3000,
         });
+        // Esperar un momento para asegurar que la sesión se cerró
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
 
+      // Verificar si hay sesiones activas para este email específico
+      const { data: { users }, error: userError } = await supabase
+        .from('auth.users')
+        .select('*')
+        .eq('email', email)
+        .single();
+
+      if (users?.length > 0) {
+        // Si encontramos el usuario, forzamos el cierre de sus sesiones
+        await supabase.auth.admin.signOut(users[0].id);
+      }
+
+      // Ahora sí intentamos el nuevo login
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
