@@ -1,0 +1,12 @@
+{
+  "files": {
+    "main.js": "/loginseguro/static/js/main.742d52ef.js",
+    "static/js/198.a1cd27c7.chunk.js": "/loginseguro/static/js/198.a1cd27c7.chunk.js",
+    "index.html": "/loginseguro/index.html",
+    "main.742d52ef.js.map": "/loginseguro/static/js/main.742d52ef.js.map",
+    "198.a1cd27c7.chunk.js.map": "/loginseguro/static/js/198.a1cd27c7.chunk.js.map"
+  },
+  "entrypoints": [
+    "static/js/main.742d52ef.js"
+  ]
+}
