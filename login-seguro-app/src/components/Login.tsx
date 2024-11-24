@@ -141,6 +141,16 @@ export default function Login() {
       if (prevUser) {
         // Si hay una sesión activa, cerrarla globalmente
         await supabase.auth.signOut({ scope: 'global' });
+        
+        // También invalidar la sesión en la tabla de tracking
+        await supabase
+          .from('user_session_tracking')
+          .update({ 
+            last_session_at: null,
+            invalidated: true
+          })
+          .eq('email', email);
+
         toast({
           title: 'Sesión previa detectada',
           description: 'Se ha cerrado la sesión anterior',
@@ -172,6 +182,7 @@ export default function Login() {
             user_id: data.user.id,
             email: email,
             last_session_at: new Date().toISOString(),
+            invalidated: false
           }, {
             onConflict: 'user_id'
           });
