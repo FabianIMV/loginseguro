@@ -28,12 +28,10 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [attempts, setAttempts] = useState(() => {
-    // Recuperar intentos del localStorage
     const savedAttempts = localStorage.getItem('loginAttempts');
     return savedAttempts ? parseInt(savedAttempts) : 0;
   });
   const [timeRemaining, setTimeRemaining] = useState(() => {
-    // Recuperar tiempo de bloqueo del localStorage
     const lockUntil = localStorage.getItem('lockUntil');
     if (lockUntil) {
       const remaining = Math.max(0, parseInt(lockUntil) - Date.now());
@@ -50,7 +48,6 @@ export default function Login() {
     password: 'Test123!'
   };
 
-  // Efecto para el temporizador de bloqueo
   useEffect(() => {
     let timer: NodeJS.Timeout;
     if (timeRemaining > 0) {
@@ -58,7 +55,6 @@ export default function Login() {
         setTimeRemaining(prev => {
           const newTime = prev - 1;
           if (newTime <= 0) {
-            // Resetear intentos cuando termine el tiempo
             setAttempts(0);
             localStorage.removeItem('loginAttempts');
             localStorage.removeItem('lockUntil');
@@ -73,7 +69,6 @@ export default function Login() {
     };
   }, [timeRemaining]);
 
-  // Efecto para verificar el estado de la sesión al cargar
   useEffect(() => {
     const checkSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -136,6 +131,19 @@ export default function Login() {
 
     setIsLoading(true);
     try {
+      // Verificar y cerrar sesiones existentes
+      const { data: { session: existingSession } } = await supabase.auth.getSession();
+      
+      if (existingSession) {
+        await supabase.auth.signOut({ scope: 'global' });
+        toast({
+          title: 'Sesión previa detectada',
+          description: 'Se ha cerrado la sesión en todos los dispositivos por seguridad',
+          status: 'warning',
+          duration: 3000,
+        });
+      }
+
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -144,10 +152,12 @@ export default function Login() {
       if (error) throw error;
 
       if (data.user) {
-        // Resetear intentos en login exitoso
         setAttempts(0);
         localStorage.removeItem('loginAttempts');
         localStorage.removeItem('lockUntil');
+        
+        // Almacenar el token de la sesión actual
+        localStorage.setItem('currentSessionToken', data.session?.access_token || '');
         
         toast({
           title: 'Inicio de sesión exitoso',
@@ -268,7 +278,6 @@ export default function Login() {
                 Ingresar
               </Button>
 
-              {/* Credenciales de prueba */}
               <Box 
                 p={4} 
                 bg="gray.50" 

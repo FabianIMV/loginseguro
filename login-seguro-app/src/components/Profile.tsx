@@ -57,6 +57,37 @@ export default function Profile() {
     };
   }, [navigate]);
 
+  // En el componente Profile, añadir este nuevo useEffect
+useEffect(() => {
+  const interval = setInterval(async () => {
+    try {
+      const { data: { session: currentSession }, error } = 
+        await supabase.auth.getSession();
+      
+      if (error) throw error;
+
+      // Verificar si el token de la sesión actual coincide con el almacenado
+      const storedSessionToken = localStorage.getItem('supabase.auth.token');
+      if (currentSession && storedSessionToken && 
+          !storedSessionToken.includes(currentSession.access_token)) {
+        // Si no coincide, alguien más inició sesión
+        toast({
+          title: 'Sesión invalida',
+          description: 'Se ha detectado un inicio de sesión en otro dispositivo',
+          status: 'error',
+          duration: null,
+          isClosable: false,
+        });
+        await handleSignOut();
+      }
+    } catch (error) {
+      console.error('Error verificando sesión:', error);
+    }
+  }, 5000); // Verificar cada 5 segundos
+
+  return () => clearInterval(interval);
+}, []);
+
   const checkUser = async () => {
     try {
       const { data: { session }, error } = await supabase.auth.getSession();
