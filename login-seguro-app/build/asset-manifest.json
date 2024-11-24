@@ -1,0 +1,10 @@
+{
+  "files": {
+    "main.js": "/loginseguro/static/js/main.fc9902b1.js",
+    "index.html": "/loginseguro/index.html",
+    "main.fc9902b1.js.map": "/loginseguro/static/js/main.fc9902b1.js.map"
+  },
+  "entrypoints": [
+    "static/js/main.fc9902b1.js"
+  ]
+}

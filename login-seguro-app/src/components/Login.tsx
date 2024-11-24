@@ -12,6 +12,12 @@ import {
   Text,
 } from '@chakra-ui/react';
 
+// Credenciales de prueba (en un caso real, esto estaría en el backend)
+const TEST_CREDENTIALS = {
+  email: 'test@test.com',
+  password: 'Test123!' // Contraseña segura de prueba
+};
+
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -27,6 +33,9 @@ export default function Login() {
       /UPDATE.*SET/i,
       /DELETE.*FROM/i,
       /<script>/i,
+      /'/,  // Prevenir comillas simples
+      /;/,  // Prevenir punto y coma
+      /--/  // Prevenir comentarios SQL
     ];
     return !dangerousPatterns.some(pattern => pattern.test(input));
   };
@@ -34,6 +43,7 @@ export default function Login() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    // Validar entrada para prevenir SQL Injection
     if (!validateInput(email) || !validateInput(password)) {
       toast({
         title: 'Error',
@@ -44,6 +54,7 @@ export default function Login() {
       return;
     }
 
+    // Verificar intentos fallidos
     if (attempts >= 3) {
       toast({
         title: 'Error',
@@ -56,10 +67,19 @@ export default function Login() {
 
     setIsLoading(true);
     try {
-      // Aquí iría la lógica de autenticación
-      // Por ahora simularemos un error
-      setAttempts(prev => prev + 1);
-      throw new Error('Credenciales inválidas');
+      // Simular validación de credenciales
+      if (email === TEST_CREDENTIALS.email && password === TEST_CREDENTIALS.password) {
+        toast({
+          title: 'Éxito',
+          description: 'Inicio de sesión exitoso',
+          status: 'success',
+          duration: 3000,
+        });
+        // Aquí podrías redirigir al usuario o actualizar el estado
+      } else {
+        setAttempts(prev => prev + 1);
+        throw new Error('Credenciales inválidas');
+      }
     } catch (error: any) {
       toast({
         title: 'Error',
@@ -86,6 +106,7 @@ export default function Login() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   bg="gray.50"
+                  placeholder="test@test.com"
                 />
               </FormControl>
 
@@ -96,6 +117,7 @@ export default function Login() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   bg="gray.50"
+                  placeholder="Test123!"
                 />
               </FormControl>
 
@@ -114,6 +136,14 @@ export default function Login() {
                   Intentos fallidos: {attempts}/3
                 </Text>
               )}
+
+              <Text fontSize="sm" color="gray.600">
+                Credenciales de prueba:
+                <br />
+                Email: test@test.com
+                <br />
+                Contraseña: Test123!
+              </Text>
             </VStack>
           </form>
         </Box>
