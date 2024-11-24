@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Box,
   Button,
@@ -22,67 +23,21 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false);
   const [attempts, setAttempts] = useState(0);
   const [timeRemaining, setTimeRemaining] = useState(0);
+  const navigate = useNavigate();
   const toast = useToast();
 
-  // Verificar estado de bloqueo al cargar
-  useEffect(() => {
-    checkLockoutStatus();
-  }, []);
-
-  const checkLockoutStatus = async () => {
-    try {
-      const { data: user, error } = await supabase
-        .from('users')
-        .select('lockout_until, failed_attempts')
-        .eq('email', email)
-        .single();
-
-      if (user?.lockout_until) {
-        const lockoutTime = new Date(user.lockout_until);
-        const now = new Date();
-        if (lockoutTime > now) {
-          setTimeRemaining(Math.floor((lockoutTime.getTime() - now.getTime()) / 1000));
-          setAttempts(3); // Max attempts
-        }
-      }
-    } catch (error) {
-      console.error('Error checking lockout status:', error);
-    }
-  };
-
-  const handleFailedAttempt = async () => {
-    try {
-      const { data: user } = await supabase
-        .from('users')
-        .select('failed_attempts')
-        .eq('email', email)
-        .single();
-
-      const newAttempts = (user?.failed_attempts || 0) + 1;
-
-      if (newAttempts >= 3) {
-        // Bloquear por 15 minutos
-        const lockoutUntil = new Date(Date.now() + 15 * 60 * 1000);
-        await supabase
-          .from('users')
-          .update({
-            failed_attempts: newAttempts,
-            lockout_until: lockoutUntil.toISOString()
-          })
-          .eq('email', email);
-
-        setTimeRemaining(15 * 60);
-      } else {
-        await supabase
-          .from('users')
-          .update({ failed_attempts: newAttempts })
-          .eq('email', email);
-      }
-
-      setAttempts(newAttempts);
-    } catch (error) {
-      console.error('Error updating failed attempts:', error);
-    }
+  const validateInput = (input: string) => {
+    const dangerousPatterns = [
+      /SELECT.*FROM/i,
+      /INSERT.*INTO/i,
+      /UPDATE.*SET/i,
+      /DELETE.*FROM/i,
+      /<script>/i,
+      /'/,
+      /;/,
+      /--/
+    ];
+    return !dangerousPatterns.some(pattern => pattern.test(input));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -98,41 +53,53 @@ export default function Login() {
       return;
     }
 
+    if (!validateInput(email) || !validateInput(password)) {
+      toast({
+        title: 'Error de Seguridad',
+        description: 'Entrada inválida detectada - Se ha registrado el intento',
+        status: 'error',
+        duration: 3000,
+      });
+      return;
+    }
+
     setIsLoading(true);
     try {
-      // Intentar login con Supabase
-      const { data: { user }, error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
-        password
+        password,
       });
 
       if (error) throw error;
 
-      if (user) {
-        // Reset failed attempts on successful login
-        await supabase
-          .from('users')
-          .update({
-            failed_attempts: 0,
-            lockout_until: null
-          })
-          .eq('email', email);
-
+      if (data.user) {
         toast({
-          title: 'Éxito',
-          description: 'Inicio de sesión exitoso',
+          title: 'Inicio de sesión exitoso',
           status: 'success',
-          duration: 3000,
+          duration: 2000,
         });
-        
-        // Reset local state
-        setAttempts(0);
-        setTimeRemaining(0);
+        // Redirigir al perfil después de un inicio de sesión exitoso
+        navigate('/profile');
       }
     } catch (error: any) {
-      console.error('Error:', error);
-      await handleFailedAttempt();
+      const newAttempts = attempts + 1;
+      setAttempts(newAttempts);
       
+      if (newAttempts >= 3) {
+        const lockoutMinutes = 15;
+        setTimeRemaining(lockoutMinutes * 60);
+        const lockoutInterval = setInterval(() => {
+          setTimeRemaining(prev => {
+            if (prev <= 1) {
+              clearInterval(lockoutInterval);
+              setAttempts(0);
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
+      }
+
       toast({
         title: 'Error',
         description: error.message,
@@ -170,6 +137,7 @@ export default function Login() {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  bg="gray.50"
                   isDisabled={timeRemaining > 0}
                 />
               </FormControl>
@@ -180,6 +148,7 @@ export default function Login() {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  bg="gray.50"
                   isDisabled={timeRemaining > 0}
                 />
               </FormControl>
