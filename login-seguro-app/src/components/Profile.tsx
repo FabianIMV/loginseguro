@@ -31,41 +31,55 @@ export default function Profile() {
   const [loading, setLoading] = useState(true);
   const [sessionInfo, setSessionInfo] = useState<any>(null);
   const [showSessionEndedModal, setShowSessionEndedModal] = useState(false);
-  const [currentSessionTime] = useState(new Date().toISOString()); // Guardamos el tiempo de inicio de esta sesión
+  const [lastVerificationTime, setLastVerificationTime] = useState<string | null>(null);
   const navigate = useNavigate();
   const toast = useToast();
 
   // Verificación periódica de sesión
   useEffect(() => {
+    let isFirstCheck = true;
+
     const interval = setInterval(async () => {
       try {
         const { data: { session: currentSession } } = await supabase.auth.getSession();
         
-        // Si no hay sesión, cerrar la sesión actual
         if (!currentSession) {
-          setShowSessionEndedModal(true);
-          await handleSessionEnd();
           return;
         }
 
-        // Obtener la fecha de la última sesión válida para este usuario
-        const { data, error } = await supabase
+        // Si es la primera verificación, establecer el tiempo de verificación
+        if (isFirstCheck) {
+          isFirstCheck = false;
+          setLastVerificationTime(new Date().toISOString());
+          // Registrar la sesión inicial
+          await supabase
+            .from('user_session_tracking')
+            .upsert({
+              user_id: currentSession.user.id,
+              last_session_at: new Date().toISOString(),
+            }, {
+              onConflict: 'user_id'
+            });
+          return;
+        }
+
+        // Obtener la última sesión registrada
+        const { data: sessionData, error: sessionError } = await supabase
           .from('user_session_tracking')
           .select('last_session_at')
           .eq('user_id', currentSession.user.id)
           .single();
 
-        if (error) {
-          console.error('Error al verificar sesión:', error);
-          return;
-        }
+        if (sessionError) return;
 
-        // Si hay una sesión más reciente que la actual, cerrar esta
-        if (data?.last_session_at && new Date(data.last_session_at) > new Date(currentSessionTime)) {
+        // Solo cerrar si hay una sesión más reciente y no es la nuestra
+        if (sessionData?.last_session_at && 
+            lastVerificationTime && 
+            new Date(sessionData.last_session_at) > new Date(lastVerificationTime)) {
           setShowSessionEndedModal(true);
           await handleSessionEnd();
         } else {
-          // Actualizar el timestamp de la última sesión
+          // Actualizar nuestro timestamp
           await supabase
             .from('user_session_tracking')
             .upsert({
@@ -82,7 +96,7 @@ export default function Profile() {
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [currentSessionTime]); // Agregamos currentSessionTime como dependencia
+  }, [lastVerificationTime]);
 
   const handleSessionEnd = async () => {
     try {
@@ -140,16 +154,6 @@ export default function Profile() {
       if (tokenExpiry <= now) {
         throw new Error('Sesión expirada');
       }
-
-      // Actualizar el registro de la sesión al cargar el perfil
-      await supabase
-        .from('user_session_tracking')
-        .upsert({
-          user_id: session.user.id,
-          last_session_at: new Date().toISOString(),
-        }, {
-          onConflict: 'user_id'
-        });
 
     } catch (error: any) {
       console.error('Error:', error);
