@@ -7,6 +7,7 @@
     "@chakra-ui/react": "^2.8.2",
     "@emotion/react": "^11.0.0",
     "@emotion/styled": "^11.0.0",
+    "@supabase/supabase-js": "^2.46.1",
     "@types/node": "^16.18.68",
     "@types/react": "^18.2.42",
     "@types/react-dom": "^18.2.17",
