@@ -16,7 +16,13 @@ import {
   Tr,
   Td,
   Badge,
-  Code
+  Code,
+  Modal,
+  ModalOverlay,
+  ModalContent,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
 } from '@chakra-ui/react';
 import { supabase } from '../lib/supabaseClient';
 
@@ -24,37 +30,54 @@ export default function Profile() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [sessionInfo, setSessionInfo] = useState<any>(null);
+  const [showSessionEndedModal, setShowSessionEndedModal] = useState(false);
   const navigate = useNavigate();
   const toast = useToast();
 
-  // Función para verificar sesión única
-  const verifyUniqueSession = async () => {
-    try {
-      const { data: { session: currentSession } } = await supabase.auth.getSession();
-      if (!currentSession) return;
-      
-      // Verificar si hay otras sesiones activas para este usuario
-      const { data: sessions, error } = await supabase
-        .from('auth.sessions')
-        .select('*')
-        .eq('user_id', currentSession.user.id);
+  // Verificación periódica de la validez de la sesión
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const { data: { session: currentSession } } = await supabase.auth.getSession();
         
-      if (error) throw error;
-      
-      if (sessions && sessions.length > 1) {
-        // Si hay más de una sesión, cerrar todas y forzar nuevo login
-        await supabase.auth.signOut({ scope: 'global' });
-        toast({
-          title: 'Sesión múltiple detectada',
-          description: 'Se han detectado múltiples sesiones activas. Por seguridad, se han cerrado todas las sesiones.',
-          status: 'error',
-          duration: 5000,
-          isClosable: false,
-        });
-        navigate('/');
+        if (!currentSession) {
+          // Si no hay sesión, redirigir al login
+          handleSessionEnd();
+          return;
+        }
+
+        // Verificar si el token almacenado coincide con el token actual
+        const storedToken = localStorage.getItem('currentSessionToken');
+        if (storedToken && storedToken !== currentSession.access_token) {
+          // Si los tokens no coinciden, significa que se inició sesión en otro dispositivo
+          setShowSessionEndedModal(true);
+          await handleSessionEnd();
+        }
+      } catch (error) {
+        console.error('Error verificando sesión:', error);
       }
+    }, 3000); // Verificar cada 3 segundos
+
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleSessionEnd = async () => {
+    try {
+      // Limpiar el token almacenado
+      localStorage.removeItem('currentSessionToken');
+      
+      // Cerrar la sesión en Supabase
+      await supabase.auth.signOut();
+      
+      // Mostrar modal
+      setShowSessionEndedModal(true);
+      
+      // Después de 5 segundos, redirigir al login
+      setTimeout(() => {
+        navigate('/');
+      }, 5000);
     } catch (error) {
-      console.error('Error verificando sesión única:', error);
+      console.error('Error al cerrar sesión:', error);
     }
   };
 
@@ -69,7 +92,9 @@ export default function Profile() {
             navigate('/');
             break;
           case 'TOKEN_REFRESHED':
-            console.log('Token refreshed');
+            if (session) {
+              localStorage.setItem('currentSessionToken', session.access_token);
+            }
             break;
           default:
             if (!session) {
@@ -87,15 +112,6 @@ export default function Profile() {
       }
     };
   }, [navigate]);
-
-  // Verificación periódica de sesión única
-  useEffect(() => {
-    const interval = setInterval(async () => {
-      await verifyUniqueSession();
-    }, 3000); // Verificar cada 3 segundos
-    
-    return () => clearInterval(interval);
-  }, []);
 
   const checkUser = async () => {
     try {
@@ -164,54 +180,78 @@ export default function Profile() {
   }
 
   return (
-    <Container maxW="container.sm" py={10}>
-      <VStack spacing={8}>
-        <Heading>Perfil de Usuario</Heading>
-        
-        <Alert status="success" borderRadius="md">
-          <AlertIcon />
-          Sesión activa y segura
-        </Alert>
+    <>
+      <Container maxW="container.sm" py={10}>
+        <VStack spacing={8}>
+          <Heading>Perfil de Usuario</Heading>
+          
+          <Alert status="success" borderRadius="md">
+            <AlertIcon />
+            Sesión activa y segura
+          </Alert>
 
-        <Box w="100%" bg="white" p={8} borderRadius="lg" boxShadow="lg">
-          <VStack spacing={4} align="stretch">
-            <Heading size="md" mb={4}>Información de la Sesión</Heading>
-            
-            <Table variant="simple">
-              <Tbody>
-                <Tr>
-                  <Td fontWeight="bold">Email:</Td>
-                  <Td>{user?.email}</Td>
-                </Tr>
-                <Tr>
-                  <Td fontWeight="bold">ID de Usuario:</Td>
-                  <Td><Code>{user?.id}</Code></Td>
-                </Tr>
-                <Tr>
-                  <Td fontWeight="bold">Último acceso:</Td>
-                  <Td>{formatDate(new Date(user?.last_sign_in_at))}</Td>
-                </Tr>
-                <Tr>
-                  <Td fontWeight="bold">Expira en:</Td>
-                  <Td>
-                    <Badge colorScheme="green">
-                      {formatDate(new Date(sessionInfo?.expires_at * 1000))}
-                    </Badge>
-                  </Td>
-                </Tr>
-              </Tbody>
-            </Table>
+          <Box w="100%" bg="white" p={8} borderRadius="lg" boxShadow="lg">
+            <VStack spacing={4} align="stretch">
+              <Heading size="md" mb={4}>Información de la Sesión</Heading>
+              
+              <Table variant="simple">
+                <Tbody>
+                  <Tr>
+                    <Td fontWeight="bold">Email:</Td>
+                    <Td>{user?.email}</Td>
+                  </Tr>
+                  <Tr>
+                    <Td fontWeight="bold">ID de Usuario:</Td>
+                    <Td><Code>{user?.id}</Code></Td>
+                  </Tr>
+                  <Tr>
+                    <Td fontWeight="bold">Último acceso:</Td>
+                    <Td>{formatDate(new Date(user?.last_sign_in_at))}</Td>
+                  </Tr>
+                  <Tr>
+                    <Td fontWeight="bold">Expira en:</Td>
+                    <Td>
+                      <Badge colorScheme="green">
+                        {formatDate(new Date(sessionInfo?.expires_at * 1000))}
+                      </Badge>
+                    </Td>
+                  </Tr>
+                </Tbody>
+              </Table>
 
-            <Button
-              colorScheme="red"
-              onClick={handleSignOut}
-              mt={4}
-            >
-              Cerrar Sesión
+              <Button
+                colorScheme="red"
+                onClick={handleSignOut}
+                mt={4}
+              >
+                Cerrar Sesión
+              </Button>
+            </VStack>
+          </Box>
+        </VStack>
+      </Container>
+
+      {/* Modal para mostrar cuando la sesión es terminada por un nuevo inicio de sesión */}
+      <Modal isOpen={showSessionEndedModal} onClose={() => {}} closeOnOverlayClick={false}>
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>Sesión Finalizada</ModalHeader>
+          <ModalBody>
+            <Alert status="warning" mb={4}>
+              <AlertIcon />
+              <Text>
+                Se ha iniciado sesión en otro dispositivo. Por seguridad, esta sesión ha sido cerrada.
+              </Text>
+            </Alert>
+            <Text>Serás redirigido a la página de inicio de sesión en 5 segundos...</Text>
+          </ModalBody>
+          <ModalFooter>
+            <Button colorScheme="blue" onClick={() => navigate('/')}>
+              Ir al login ahora
             </Button>
-          </VStack>
-        </Box>
-      </VStack>
-    </Container>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+    </>
   );
 }
