@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { AuthChangeEvent } from '@supabase/supabase-js';
 import {
   Box,
   Container,
@@ -15,6 +16,7 @@ import {
   Tr,
   Td,
   Badge,
+  Code
 } from '@chakra-ui/react';
 import { supabase } from '../lib/supabaseClient';
 
@@ -28,18 +30,24 @@ export default function Profile() {
   useEffect(() => {
     checkUser();
     // Suscribirse a cambios en la sesión
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('Auth event:', event);
-      if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
-        navigate('/');
-      } else if (event === 'TOKEN_REFRESHED') {
-        console.log('Token refreshed');
-      } else if (!session) {
-        navigate('/');
-      } else {
-        setUser(session.user);
-        setSessionInfo(session);
-      }
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      async (event: AuthChangeEvent, session) => {
+        console.log('Auth event:', event);
+        switch (event) {
+          case 'SIGNED_OUT':
+            navigate('/');
+            break;
+          case 'TOKEN_REFRESHED':
+            console.log('Token refreshed');
+            break;
+          default:
+            if (!session) {
+              navigate('/');
+            } else {
+              setUser(session.user);
+              setSessionInfo(session);
+            }
+        }
     });
 
     return () => {
