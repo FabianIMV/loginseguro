@@ -35,7 +35,6 @@ export default function Profile() {
         console.log('Auth event:', event);
         switch (event) {
           case 'SIGNED_OUT':
-          case 'USER_DELETED':
             navigate(ROUTES.LOGIN);
             break;
           case 'TOKEN_REFRESHED':
