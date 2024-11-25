@@ -38,53 +38,58 @@ export default function Profile() {
   useEffect(() => {
     let isComponentMounted = true;
 
+    // En el useEffect de verificación de sesión
     const checkSessionValidity = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session || !isComponentMounted) return;
 
-        // Verificar la sesión en la tabla de tracking
-        const { data: sessionData } = await supabase
+        // Verificar si nuestra sesión sigue siendo la activa
+        const { data: activeSession } = await supabase
           .from('user_session_tracking')
           .select('*')
           .eq('email', session.user.email)
+          .eq('is_active', true)
           .single();
 
-        // Si no hay datos de tracking o la última sesión es diferente, cerrar
-        if (!sessionData?.last_session_at || 
-            sessionData.user_id !== session.user.id) {
-          console.log('Sesión invalidada, cerrando...');
+        // Si no hay sesión activa o el ID de sesión no coincide, cerrar
+        if (!activeSession || activeSession.session_id !== session.access_token) {
+          console.log('Sesión no válida o reemplazada');
           setShowSessionEndedModal(true);
           await handleSessionEnd();
           return;
         }
 
-        // Verificar si hay una sesión más reciente
-        const currentTimestamp = new Date(sessionData.last_session_at).getTime();
-        const { data: newerSession } = await supabase
+        // Actualizar el timestamp de la sesión activa
+        await supabase
           .from('user_session_tracking')
-          .select('*')
-          .eq('email', session.user.email)
-          .gt('last_session_at', sessionData.last_session_at)
-          .limit(1)
-          .maybeSingle();
+          .update({ last_session_at: new Date().toISOString() })
+          .eq('session_id', session.access_token);
 
-        if (newerSession) {
-          console.log('Se detectó una sesión más reciente');
-          setShowSessionEndedModal(true);
-          await handleSessionEnd();
-          return;
-        }
-
-        // Actualizar timestamp solo si somos la sesión activa
-        if (sessionData.user_id === session.user.id) {
-          await supabase
-            .from('user_session_tracking')
-            .update({ last_session_at: new Date().toISOString() })
-            .eq('user_id', session.user.id);
-        }
       } catch (error) {
         console.error('Error checking session:', error);
+      }
+    };
+
+    // Modificar el handleSessionEnd
+    const handleSessionEnd = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          // Marcar nuestra sesión como inactiva
+          await supabase
+            .from('user_session_tracking')
+            .update({ is_active: false })
+            .eq('session_id', session.access_token);
+
+          // Cerrar la sesión
+          await supabase.auth.signOut();
+        }
+
+        navigate('/');
+      } catch (error) {
+        console.error('Error al cerrar sesión:', error);
+        navigate('/');
       }
     };
 
@@ -95,12 +100,12 @@ export default function Profile() {
     // Suscribirse a cambios en la tabla de tracking
     const subscription = supabase
       .channel('session_changes')
-      .on('postgres_changes', 
-          { event: '*', schema: 'public', table: 'user_session_tracking' }, 
-          async (payload) => {
-            console.log('Cambio detectado en sesiones:', payload);
-            await checkSessionValidity();
-          })
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'user_session_tracking' },
+        async (payload) => {
+          console.log('Cambio detectado en sesiones:', payload);
+          await checkSessionValidity();
+        })
       .subscribe();
 
     return () => {
@@ -201,7 +206,7 @@ export default function Profile() {
       <Container maxW="container.sm" py={10}>
         <VStack spacing={8}>
           <Heading>Perfil de Usuario</Heading>
-          
+
           <Alert status="success" borderRadius="md">
             <AlertIcon />
             Sesión activa y segura
@@ -210,7 +215,7 @@ export default function Profile() {
           <Box w="100%" bg="white" p={8} borderRadius="lg" boxShadow="lg">
             <VStack spacing={4} align="stretch">
               <Heading size="md" mb={4}>Información de la Sesión</Heading>
-              
+
               <Table variant="simple">
                 <Tbody>
                   <Tr>
@@ -248,7 +253,7 @@ export default function Profile() {
         </VStack>
       </Container>
 
-      <Modal isOpen={showSessionEndedModal} onClose={() => {}} closeOnOverlayClick={false}>
+      <Modal isOpen={showSessionEndedModal} onClose={() => { }} closeOnOverlayClick={false}>
         <ModalOverlay />
         <ModalContent>
           <ModalHeader>Sesión Finalizada</ModalHeader>

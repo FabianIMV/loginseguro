@@ -131,45 +131,19 @@ export default function Login() {
 
     setIsLoading(true);
     try {
-      // 1. Primero verificar si hay una sesión activa para este email
-      const { data: existingSession } = await supabase
-        .from('user_session_tracking')
-        .select('*')
-        .eq('email', email)
-        .single();
+      // Forzar cierre de todas las sesiones existentes primero
+      await supabase.auth.signOut({ scope: 'global' });
 
-      // 2. Si existe una sesión activa, cerrarla primero
-      if (existingSession) {
-        // Marcar la sesión como inválida
-        await supabase
-          .from('user_session_tracking')
-          .update({ 
-            last_session_at: null,
-            invalidated: true 
-          })
-          .eq('email', email);
-
-        // Forzar cierre de sesión global
-        await supabase.auth.signOut({ scope: 'global' });
-        
-        // Esperar un momento para asegurar que la sesión se cerró
-        await new Promise(resolve => setTimeout(resolve, 2000));
-
-        toast({
-          title: 'Sesión previa detectada',
-          description: 'Se ha cerrado la sesión anterior',
-          status: 'warning',
-          duration: 3000,
-        });
-      }
-
-      // 3. Limpiar cualquier sesión anterior
+      // Limpiar cualquier sesión anterior para este email
       await supabase
         .from('user_session_tracking')
         .delete()
         .eq('email', email);
 
-      // 4. Intentar el nuevo login
+      // Esperar un momento para asegurar que todo se limpió
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Intentar el nuevo login
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -182,14 +156,15 @@ export default function Login() {
         localStorage.removeItem('loginAttempts');
         localStorage.removeItem('lockUntil');
         
-        // 5. Registrar la nueva sesión
+        // Registrar la nueva sesión como única sesión activa
         await supabase
           .from('user_session_tracking')
-          .insert({
+          .upsert({
             user_id: data.user.id,
-            email: data.user.email,
+            email: email,
             last_session_at: new Date().toISOString(),
-            invalidated: false
+            is_active: true,
+            session_id: data.session?.access_token
           });
         
         toast({
