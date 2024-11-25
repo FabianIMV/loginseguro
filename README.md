@@ -149,9 +149,6 @@ Password: Test123!
 - Las rutas están protegidas contra acceso no autorizado
 - Se implementa un sistema de timeout para sesiones inactivas
 - Los tokens se renuevan automáticamente según sea necesario
-
-## 🤝 Contribuir
-Las contribuciones son bienvenidas. Por favor, asegúrate de probar cualquier cambio contra los vectores de ataque conocidos antes de enviar un PR.
-
+  
 ## 📄 Licencia
-MIT License
+FMV License
