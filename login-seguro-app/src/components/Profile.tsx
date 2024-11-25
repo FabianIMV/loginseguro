@@ -52,11 +52,11 @@ export default function Profile() {
       // Mostrar modal y redirigir
       setShowSessionEndedModal(true);
       setTimeout(() => {
-        window.location.href = '/';
+        window.location.href = '/loginseguro';
       }, 2000);
     } catch (error) {
       console.error('Error en forceLogout:', error);
-      window.location.href = '/';
+      window.location.href = '/loginseguro';
     }
   };
 
