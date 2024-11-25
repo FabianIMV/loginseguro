@@ -131,25 +131,29 @@ export default function Login() {
 
     setIsLoading(true);
     try {
-      // Primero verificar si hay una sesión activa para este email
-      const { data: prevUser, error: prevUserError } = await supabase
+      // 1. Primero verificar si hay una sesión activa para este email
+      const { data: existingSession } = await supabase
         .from('user_session_tracking')
         .select('*')
         .eq('email', email)
         .single();
 
-      if (prevUser) {
-        // Si hay una sesión activa, cerrarla globalmente
-        await supabase.auth.signOut({ scope: 'global' });
-        
-        // También invalidar la sesión en la tabla de tracking
+      // 2. Si existe una sesión activa, cerrarla primero
+      if (existingSession) {
+        // Marcar la sesión como inválida
         await supabase
           .from('user_session_tracking')
           .update({ 
             last_session_at: null,
-            invalidated: true
+            invalidated: true 
           })
           .eq('email', email);
+
+        // Forzar cierre de sesión global
+        await supabase.auth.signOut({ scope: 'global' });
+        
+        // Esperar un momento para asegurar que la sesión se cerró
+        await new Promise(resolve => setTimeout(resolve, 2000));
 
         toast({
           title: 'Sesión previa detectada',
@@ -157,12 +161,15 @@ export default function Login() {
           status: 'warning',
           duration: 3000,
         });
-        
-        // Esperar un momento para asegurar que la sesión se cerró
-        await new Promise(resolve => setTimeout(resolve, 1000));
       }
 
-      // Ahora sí intentar el nuevo login
+      // 3. Limpiar cualquier sesión anterior
+      await supabase
+        .from('user_session_tracking')
+        .delete()
+        .eq('email', email);
+
+      // 4. Intentar el nuevo login
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -175,16 +182,14 @@ export default function Login() {
         localStorage.removeItem('loginAttempts');
         localStorage.removeItem('lockUntil');
         
-        // Actualizar el registro de la última sesión
+        // 5. Registrar la nueva sesión
         await supabase
           .from('user_session_tracking')
-          .upsert({
+          .insert({
             user_id: data.user.id,
-            email: email,
+            email: data.user.email,
             last_session_at: new Date().toISOString(),
             invalidated: false
-          }, {
-            onConflict: 'user_id'
           });
         
         toast({
