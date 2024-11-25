@@ -74,7 +74,7 @@ export default function Profile() {
             duration: null,
             isClosable: false,
           });
-          await handleSignOut();
+          await handleSignOut(true);
         }
       } catch (error) {
         console.error('Error verificando sesión:', error);
@@ -115,19 +115,28 @@ export default function Profile() {
         status: 'error',
         duration: 3000,
       });
-      handleSignOut();
+      handleSignOut(true);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSignOut = async () => {
+  const handleSignOut = async (isForced: boolean = false) => {
     try {
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
       
       localStorage.removeItem('currentSessionToken');
       localStorage.clear();
+      
+      if (!isForced) {
+        toast({
+          title: 'Cerrando sesión',
+          status: 'info',
+          duration: 3000,
+        });
+      }
+      
       navigate(ROUTES.LOGIN);
     } catch (error: any) {
       toast({
@@ -195,7 +204,7 @@ export default function Profile() {
 
             <Button
               colorScheme="red"
-              onClick={handleSignOut}
+              onClick={() => handleSignOut()}
               mt={4}
             >
               Cerrar Sesión
